@@ -48,6 +48,14 @@ export class RenderClient {
       const usp = new URLSearchParams();
       for (const [k, v] of Object.entries(query)) {
         if (v === undefined || v === null || v === '') continue;
+        // Render's API caps `limit` at 100 across all list endpoints.
+        // Clamp defensively here so a bad caller can never trigger
+        // 400 "invalid limit: too large".
+        if (k === 'limit') {
+          const n = Math.max(1, Math.min(100, Number(v) || 20));
+          usp.set(k, String(n));
+          continue;
+        }
         if (Array.isArray(v)) v.forEach((x) => usp.append(k, String(x)));
         else usp.set(k, String(v));
       }

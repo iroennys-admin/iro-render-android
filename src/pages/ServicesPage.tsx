@@ -27,9 +27,17 @@ export default function ServicesPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const all = await services.list(app.ownerId ? { ownerId: app.ownerId, limit: 200 } : { limit: 200 });
+      const all = await services.paginated(app.ownerId || undefined);
       setItems(all);
-      const last = await Promise.allSettled(all.map(s => deploys.list(s.id, { limit: 1 })));
+      // Batch deploy lookups so we don't hammer the rate limit
+      // (Render allows 400 req/min — be polite with bursts of 10 parallel).
+      const last: PromiseSettledResult<any>[] = [];
+      const BATCH = 10;
+      for (let i = 0; i < all.length; i += BATCH) {
+        const slice = all.slice(i, i + BATCH);
+        const r = await Promise.allSettled(slice.map(s => deploys.list(s.id, { limit: 1 })));
+        last.push(...r);
+      }
       const map: Record<string, Deploy | null> = {};
       all.forEach((s, i) => {
         const r = last[i];

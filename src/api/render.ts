@@ -253,7 +253,7 @@ export const logs = {
     level?: string|string[]; type?: string|string[];
     instance?: string|string[]; host?: string|string[];
     direction?: 'forward'|'backward';
-  } = {}) => render.get<{ logs: LogEntry[]; hasMore?: boolean; nextStartTime?: string; nextEndTime?: string }>('/logs', { limit: 200, direction: 'backward', ...opts }),
+  } = {}) => render.get<{ logs: LogEntry[]; hasMore?: boolean; nextStartTime?: string; nextEndTime?: string }>('/logs', { limit: 100, direction: 'backward', ...opts }),
 
   /** Log label values, e.g. unique instances, hosts, etc. */
   labels: (label: string, opts: { resource?: string|string[]; ownerId?: string|string[]; startTime?: string; endTime?: string; } = {}) =>
