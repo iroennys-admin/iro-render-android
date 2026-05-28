@@ -20,6 +20,9 @@
 		"Keyboard": {
 			"resize": "native",
 			"resizeOnFullScreen": true
+		},
+		"CapacitorHttp": {
+			"enabled": true
 		}
 	}
 }

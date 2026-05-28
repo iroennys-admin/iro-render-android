@@ -9,6 +9,9 @@ const config: CapacitorConfig = {
   plugins: {
     StatusBar: { style: 'DARK', backgroundColor: '#04121d', overlaysWebView: false },
     Keyboard:  { resize: 'native', resizeOnFullScreen: true },
+    // 🔑 CRITICAL: patch fetch() / XHR to route through native Java code,
+    // bypassing CORS (Render API blocks browser-origin requests).
+    CapacitorHttp: { enabled: true },
   },
 };
 
