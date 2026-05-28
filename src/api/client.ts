@@ -3,19 +3,28 @@
 //   • Bearer auth (rnd_... API key)
 //   • Cursor pagination helpers
 //   • Rate-limit capture from headers
-//   • Typed `request`/`get`/`post`/`patch`/`put`/`delete`
+//   • Uses the native bridge on Android (bypasses CORS), falls
+//     back to fetch() on web preview.
 // Reference: https://api-docs.render.com/reference/
 // ============================================================
+
+import { registerPlugin, Capacitor } from '@capacitor/core';
+
+const Bridge = registerPlugin<{
+  httpRequest: (opts: { url: string; method: string; body?: string; headers?: Record<string, string>; timeout?: number; }) =>
+    Promise<{ status: number; body: string; headers?: Record<string, string>; error?: string; }>;
+}>('IroBridge');
+
+function isNative(): boolean {
+  try { return Capacitor.isNativePlatform(); } catch { return false; }
+}
 
 export const RENDER_API = 'https://api.render.com/v1';
 
 export interface RateLimit { limit: number; remaining: number; reset: number; }
 export interface RenderError extends Error {
-  status: number;
-  body?: any;
-  isAuth?: boolean;
-  isPayment?: boolean;
-  isRateLimit?: boolean;
+  status: number; body?: any;
+  isAuth?: boolean; isPayment?: boolean; isRateLimit?: boolean;
 }
 
 export class RenderClient {
@@ -31,9 +40,9 @@ export class RenderClient {
 
   async request<T = any>(
     path: string,
-    init: RequestInit & { query?: Record<string, any>; accept?: string; raw?: boolean } = {},
+    init: { method?: string; body?: any; query?: Record<string, any>; accept?: string; headers?: Record<string, string>; raw?: boolean } = {},
   ): Promise<T> {
-    const { query, accept = 'application/json', raw, headers, ...rest } = init;
+    const { method = 'GET', query, accept = 'application/json', headers: extraHeaders, raw } = init;
     let url = path.startsWith('http') ? path : `${this.baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
     if (query) {
       const usp = new URLSearchParams();
@@ -45,14 +54,85 @@ export class RenderClient {
       const q = usp.toString();
       if (q) url += (url.includes('?') ? '&' : '?') + q;
     }
-    const reqHeaders: Record<string, string> = { Accept: accept, ...(headers as any) };
-    if (this.token) reqHeaders.Authorization = `Bearer ${this.token}`;
-    if (init.body && typeof init.body === 'object' && !(init.body instanceof FormData)
-        && !(init.body instanceof Blob) && typeof init.body !== 'string') {
-      reqHeaders['Content-Type'] = 'application/json';
-      (rest as any).body = JSON.stringify(init.body);
+
+    // Build headers
+    const headers: Record<string, string> = { Accept: accept, ...(extraHeaders || {}) };
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
+
+    // Build body string
+    let bodyStr: string | undefined;
+    if (init.body !== undefined && init.body !== null) {
+      if (typeof init.body === 'string') bodyStr = init.body;
+      else if (init.body instanceof FormData) {
+        // Browser-only: FormData. On native we fall back to web fetch for these.
+        return this.requestViaFetch<T>(url, method, headers, init.body, accept, raw);
+      } else {
+        headers['Content-Type'] = 'application/json';
+        bodyStr = JSON.stringify(init.body);
+      }
     }
-    const resp = await fetch(url, { ...rest, headers: reqHeaders });
+
+    // Route through native bridge if available (avoids CORS).
+    if (isNative()) {
+      let result: { status: number; body: string; headers?: Record<string, string>; error?: string };
+      try {
+        result = await Bridge.httpRequest({ url, method, body: bodyStr, headers, timeout: 60 });
+      } catch (e: any) {
+        // Bridge call itself failed (shouldn't happen, but be defensive)
+        const err: RenderError = Object.assign(new Error(e?.message || 'Bridge error'), {
+          status: 0, body: undefined,
+        });
+        throw err;
+      }
+
+      if (result.status === 0) {
+        const err: RenderError = Object.assign(new Error(result.error || 'Network error'), {
+          status: 0, body: undefined,
+        });
+        throw err;
+      }
+
+      // Capture rate-limit headers
+      const lim = result.headers?.['ratelimit-limit'];
+      if (lim) {
+        this.lastRate = {
+          limit: Number(lim) || 0,
+          remaining: Number(result.headers?.['ratelimit-remaining']) || 0,
+          reset: Number(result.headers?.['ratelimit-reset']) || 0,
+        };
+      }
+
+      if (result.status === 204) return undefined as any;
+      if (raw) return result as any;
+
+      const text = result.body || '';
+      const ct = result.headers?.['content-type'] || '';
+      const isJson = ct.includes('application/json') || (text.startsWith('{') || text.startsWith('['));
+      let data: any = text;
+      if (isJson) { try { data = JSON.parse(text); } catch { /* keep as text */ } }
+
+      if (result.status >= 400) {
+        const msg = (data && (data.message || data.error)) || `HTTP ${result.status}`;
+        const err: RenderError = Object.assign(new Error(msg), {
+          status: result.status, body: data,
+          isAuth: result.status === 401,
+          isPayment: result.status === 402,
+          isRateLimit: result.status === 429,
+        });
+        throw err;
+      }
+      return data as T;
+    }
+
+    // Web preview fallback
+    return this.requestViaFetch<T>(url, method, headers, bodyStr, accept, raw);
+  }
+
+  private async requestViaFetch<T>(
+    url: string, method: string, headers: Record<string, string>, body: any,
+    _accept: string, raw?: boolean,
+  ): Promise<T> {
+    const resp = await fetch(url, { method, headers, body });
 
     const lim = resp.headers.get('ratelimit-limit');
     if (lim) {
@@ -89,13 +169,8 @@ export class RenderClient {
   put<T = any>(p: string, body?: any) { return this.request<T>(p, { method: 'PUT', body }); }
   delete<T = any>(p: string, body?: any) { return this.request<T>(p, { method: 'DELETE', body }); }
 
-  /**
-   * Render uses {cursor: string} pagination on list endpoints.
-   * Most list responses are an array of {cursor, <resource>: {…}} envelopes.
-   * Helper iterates pages and unwraps the envelopes.
-   */
   async paginate<T = any>(
-    path: string, query: Record<string, any> = {}, unwrap = true, maxPages = 5, perPage = 100,
+    path: string, query: Record<string, any> = {}, unwrapEnvelope = true, maxPages = 5, perPage = 100,
   ): Promise<T[]> {
     const all: T[] = [];
     let cursor: string | undefined; let i = 0;
@@ -104,9 +179,8 @@ export class RenderClient {
       const data = await this.get<any[]>(path, q);
       if (!Array.isArray(data) || data.length === 0) break;
       for (const item of data) {
-        if (unwrap && item && typeof item === 'object' && 'cursor' in item) {
+        if (unwrapEnvelope && item && typeof item === 'object' && 'cursor' in item) {
           const inner = { ...item }; delete (inner as any).cursor;
-          // unwrap whatever key (service / deploy / postgres / etc.)
           const keys = Object.keys(inner);
           if (keys.length === 1) all.push(inner[keys[0]]);
           else all.push(inner as any);
@@ -122,7 +196,6 @@ export class RenderClient {
 
 export const render = new RenderClient();
 
-// Light helper to unwrap a single page response without pagination.
 export function unwrap<T = any>(items: any[]): T[] {
   if (!Array.isArray(items)) return [];
   return items.map(x => {
