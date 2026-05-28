@@ -23,7 +23,11 @@ export default function ServicePage({ id }: { id: string }) {
   const action = async (label: string, fn: () => Promise<any>, refresh = true) => {
     setBusy(true);
     try { await fn(); toast.success(label); if (refresh) await load(); }
-    catch (e: any) { toast.error(e?.message); }
+    catch (e: any) {
+      const m = e?.body?.message || e?.body?.error || e?.message || 'Error';
+      toast.error(m);
+      console.error('Action error', e);
+    }
     finally { setBusy(false); setSheet(false); }
   };
 

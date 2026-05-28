@@ -102,7 +102,7 @@ export class RenderClient {
         };
       }
 
-      if (result.status === 204) return undefined as any;
+      if (result.status === 204 || result.status === 202) return undefined as any;
       if (raw) return result as any;
 
       const text = result.body || '';
@@ -142,7 +142,7 @@ export class RenderClient {
         reset: Number(resp.headers.get('ratelimit-reset') || 0),
       };
     }
-    if (resp.status === 204) return undefined as any;
+    if (resp.status === 204 || resp.status === 202) return undefined as any;
     if (raw) return resp as any;
 
     const ct = resp.headers.get('content-type') || '';
