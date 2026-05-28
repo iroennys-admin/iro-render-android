@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+
+    <!-- Tower base -->
+    <path android:pathData="M50,62 H58 V92 H50 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="50" android:startY="62"
+                android:endX="58" android:endY="92">
+                <item android:offset="0"   android:color="#46e3b7"/>
+                <item android:offset="0.5" android:color="#37bcff"/>
+                <item android:offset="1"   android:color="#a36bff"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Outer signal arc -->
+    <path android:pathData="M 21 56 A 33 33 0 0 1 87 56"
+          android:strokeWidth="5" android:strokeLineCap="round"
+          android:fillColor="#00000000" android:strokeColor="#37bcff" android:strokeAlpha="0.35"/>
+
+    <!-- Middle signal arc -->
+    <path android:pathData="M 31 56 A 23 23 0 0 1 77 56"
+          android:strokeWidth="5" android:strokeLineCap="round"
+          android:fillColor="#00000000" android:strokeColor="#37bcff" android:strokeAlpha="0.65"/>
+
+    <!-- Inner signal arc -->
+    <path android:pathData="M 41 56 A 13 13 0 0 1 67 56"
+          android:strokeWidth="5" android:strokeLineCap="round"
+          android:fillColor="#00000000" android:strokeColor="#46e3b7"/>
+
+    <!-- Center pulse dot -->
+    <path android:pathData="M54,56 m -5 0 a 5 5 0 1 0 10 0 a 5 5 0 1 0 -10 0" android:fillColor="#FFFFFF"/>
+    <path android:pathData="M54,56 m -8 0 a 8 8 0 1 0 16 0 a 8 8 0 1 0 -16 0"
+          android:strokeWidth="1.2" android:fillColor="#00000000"
+          android:strokeColor="#FFFFFF" android:strokeAlpha="0.5"/>
+</vector>
